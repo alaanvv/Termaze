@@ -1,22 +1,22 @@
-#include <math.h>
-#include <string.h>
 #include <termios.h>
+#include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <time.h>
+#include <math.h>
 
-#define MAZE_WIDTH  31
-#define MAZE_HEIGHT 31
+#define MAZE_WIDTH  30
+#define MAZE_HEIGHT 30
 
-#define DARK_MODE 0
-#define SKIP_WALK 1
-#define TORCH_SIZE 3
 #define FURTHEST_FINISH 1
-#define MARK_STEP 1
 #define SHOW_BUILD 0
+#define TORCH_SIZE 5
+#define DARK_MODE 1
+#define SKIP_WALK 1
+#define MARK_STEP 1
 
 #define MAX(x, y) (x > y ? x : y)
 #define MIN(x, y) (x < y ? x : y)
@@ -47,60 +47,75 @@ c8 c;
 
 // ---
 
-typedef enum { STEPPED, EMPTY, PLAYER, FINISH, WALL } Cell;
 typedef enum { UP, RIGHT, DOWN, LEFT } Direction;
+
+typedef enum { EMPTY, WALL, FINISH } CellType;
+
+c8 ascii[][16] = { "░", "▓", "F" };
+
+typedef struct {
+  CellType type;
+  u8 visited;
+} Cell;
 
 typedef struct {
   u16 x, y;
 } Coord;
 
-c8 ascii[][16] = { (MAGENTA "░" RESET), "░", (MAGENTA "P" RESET), "F", "▓" };
-
-c8 message[64] = "";
 Cell maze[100][100];
+u16 maze_width = MAZE_WIDTH / 2 * 2 + 1;
+u16 maze_height = MAZE_HEIGHT / 2 * 2 + 1;
+
 Coord player;
+
+c8 message[32] = "";
 
 void scan(const char *fmt, void *arg);
 u16 is_player_at(u16 x, u16 y);
 void flush_read(c8* c);
 void msleep(u16 time);
-Cell player_over();
+CellType player_over();
 
 // ---
 
 void print_maze() {
   printf("\033[H\033[2J");
 
-  for (int j = 0; j < MAZE_WIDTH * 2 + 4; j++)
-    printf("%s", ascii[WALL]);
+  for (int i = 0; i < maze_width * 2 + 4; i++) printf("%s", ascii[WALL]);
   printf("\n");
 
-  for (int i = 0; i < MAZE_HEIGHT; i++) {
+  for (int i = 0; i < maze_height; i++) {
     printf("%s%s", ascii[WALL], ascii[WALL]);
-    for (int j = 0; j < MAZE_WIDTH; j++) {
-      if (i == MAZE_HEIGHT / 2 && j - (MAZE_WIDTH / 2 - strlen(message) / 2) >= 0 && j - (MAZE_WIDTH / 2 - strlen(message) / 2) < strlen(message))
-        printf("%c ", message[j - (MAZE_WIDTH / 2 - strlen(message) / 2)]);
-      else if (!(maze[i][j] == STEPPED && MARK_STEP) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
+
+    for (int j = 0; j < maze_width; j++) {
+      if (i == maze_height / 2 && j - (maze_width - strlen(message)) / 2 >= 0 && j - (maze_width - strlen(message)) / 2 < strlen(message))
+        printf("%c ", message[j - (maze_width - strlen(message)) / 2]);
+      else if ((!maze[i][j].visited || !MARK_STEP) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
         printf("  ");
+      else if (is_player_at(j, i))
+        printf(MAGENTA "PP" RESET);
+      else if (maze[i][j].visited)
+        printf(MAGENTA "%s%s" RESET, ascii[maze[i][j].type], ascii[maze[i][j].type]);
       else
-        printf("%s%s", is_player_at(j, i) ? ascii[2] : ascii[maze[i][j]], is_player_at(j, i) ? ascii[2] : ascii[maze[i][j]]);
+        printf("%s%s", ascii[maze[i][j].type], ascii[maze[i][j].type]);
     }
+
     printf("%s%s\n", ascii[WALL], ascii[WALL]);
   }
 
-  for (int j = 0; j < MAZE_WIDTH * 2 + 4; j++)
-    printf("%s", ascii[WALL]);
+  for (int i = 0; i < maze_width * 2 + 4; i++) printf("%s", ascii[WALL]);
   printf("\n");
-
-
 }
 
 Coord maze_generator(u16 x, u16 y, u16 dis, u16 get_last) {
   static Coord last;
-  static u16 last_dis;
+  static u16 last_dis = 0;
 
-  if (get_last) return last;
-  maze[y][x] = EMPTY;
+  if (get_last == 1) return last;
+  if (get_last == 2) {
+    last_dis = 0;
+  }
+  maze[y][x].type = EMPTY;
   if (dis > last_dis){last_dis = dis;
   last = (Coord) {x,y};}
 
@@ -114,15 +129,15 @@ Coord maze_generator(u16 x, u16 y, u16 dis, u16 get_last) {
   
   while (1) {
     possible_dirs_len = 0;
-    if (y >= 2 && maze[y - 2][x] == WALL) possible_dirs[possible_dirs_len++] = UP;
-    if (x >= 2 && maze[y][x - 2] == WALL) possible_dirs[possible_dirs_len++] = LEFT;
-    if (y + 2 < MAZE_HEIGHT && maze[y + 2][x] == WALL) possible_dirs[possible_dirs_len++] = DOWN;
-    if (x + 2 < MAZE_WIDTH  && maze[y][x + 2] == WALL) possible_dirs[possible_dirs_len++] = RIGHT;
+    if (y >= 2 && maze[y - 2][x].type == WALL) possible_dirs[possible_dirs_len++] = UP;
+    if (x >= 2 && maze[y][x - 2].type == WALL) possible_dirs[possible_dirs_len++] = LEFT;
+    if (y + 2 < maze_height && maze[y + 2][x].type == WALL) possible_dirs[possible_dirs_len++] = DOWN;
+    if (x + 2 < maze_width  && maze[y][x + 2].type == WALL) possible_dirs[possible_dirs_len++] = RIGHT;
 
     if (!possible_dirs_len) return (Coord){0,0};
     Direction chosen = possible_dirs[RAND(0, possible_dirs_len)];
 
-    maze[y + (chosen == DOWN ? 1 : chosen == UP ? -1 : 0)][x + (chosen == RIGHT ? 1 : chosen == LEFT ? -1 : 0)] = EMPTY;
+    maze[y + (chosen == DOWN ? 1 : chosen == UP ? -1 : 0)][x + (chosen == RIGHT ? 1 : chosen == LEFT ? -1 : 0)].type = EMPTY;
     maze_generator(x + (chosen == RIGHT ? 2 : chosen == LEFT ? -2 : 0), y + (chosen == DOWN ? 2 : chosen == UP ? -2 : 0), dis + 1, 0);
   }
 }
@@ -130,25 +145,27 @@ Coord maze_generator(u16 x, u16 y, u16 dis, u16 get_last) {
 void init_maze() {
   message[0] = 0;
 
-  for (u16 i = 0; i < MAZE_HEIGHT; i++)
-    for (u16 j = 0; j < MAZE_WIDTH; j++)
-      maze[i][j] = WALL;
+  for (u16 i = 0; i < maze_height; i++)
+    for (u16 j = 0; j < maze_width; j++) {
+      maze[i][j].type = WALL;
+      maze[i][j].visited = 0;
+    }
 
-  player = (Coord) { RAND(2,  MAZE_WIDTH - 2) / 2 * 2, RAND(1, MAZE_HEIGHT - 1) / 2 * 2 };
-  maze_generator(player.x, player.y, 0, 0);
-  maze[player.y][player.x] = STEPPED;
+  player = (Coord) { RAND(2,  maze_width - 2) / 2 * 2, RAND(1, maze_height - 1) / 2 * 2 };
+  maze_generator(player.x, player.y, 0, 2);
+  maze[player.y][player.x].visited = 1;
 
   Coord finish = maze_generator(0,0, 0, 1);
 
-  maze[finish.y][finish.x] = FINISH;
+  maze[finish.y][finish.x].type = FINISH;
 }
 
 u16 is_player_at(u16 x, u16 y) {
   return player.x == x && player.y == y;
 }
 
-Cell player_over() {
-  return maze[player.y][player.x];
+CellType player_over() {
+  return maze[player.y][player.x].type;
 }
 
 void compute_inputs() {
@@ -161,7 +178,7 @@ void compute_inputs() {
   else if (c == 'w') player.y--;
   else return;
 
-  if (player.x >= MAZE_WIDTH || player.y >= MAZE_HEIGHT || player_over() == WALL) {
+  if (player.x >= maze_width || player.y >= maze_height || player_over() == WALL) {
     player = tmp;
     hit_wall = 1;
   }
@@ -173,15 +190,15 @@ void compute_inputs() {
     return;
   }
 
-  maze[player.y][player.x] = STEPPED;
+  maze[player.y][player.x].visited = 1;
 
   if (!SKIP_WALK || hit_wall) return;
 
   u16 possible_dirs_len = 0;
-  if (player.y >= 1 && maze[player.y - 1][player.x] <= EMPTY) possible_dirs_len++;
-  if (player.x >= 1 && maze[player.y][player.x - 1] <= EMPTY) possible_dirs_len++;
-  if (player.y + 1 < MAZE_HEIGHT && maze[player.y + 1][player.x] <= EMPTY) possible_dirs_len++;
-  if (player.x + 1 < MAZE_WIDTH  && maze[player.y][player.x + 1] <= EMPTY) possible_dirs_len++;
+  if (player.y >= 1 && maze[player.y - 1][player.x].type <= EMPTY) possible_dirs_len++;
+  if (player.x >= 1 && maze[player.y][player.x - 1].type <= EMPTY) possible_dirs_len++;
+  if (player.y + 1 < maze_height && maze[player.y + 1][player.x].type <= EMPTY) possible_dirs_len++;
+  if (player.x + 1 < maze_width  && maze[player.y][player.x + 1].type <= EMPTY) possible_dirs_len++;
 
   if (possible_dirs_len > 2) return;
 
