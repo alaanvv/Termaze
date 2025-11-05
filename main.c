@@ -107,38 +107,41 @@ void print_maze() {
   printf("\n");
 }
 
-Coord maze_generator(u16 x, u16 y, u16 dis, u16 get_last) {
-  static Coord last;
-  static u16 last_dis = 0;
+Coord maze_generator(Coord pos, u16 distance, u16 meta_action) {
+  static u16 furthest_distance = 0;
+  static Coord furthest_pos;
 
-  if (get_last == 1) return last;
-  if (get_last == 2) {
-    last_dis = 0;
+  if (meta_action == 1) return furthest_pos;
+  if (meta_action == 2) furthest_distance = 0;
+
+  maze[pos.y][pos.x].type = EMPTY;
+
+  if (distance  > furthest_distance) {
+    furthest_distance = distance;
+    furthest_pos = pos;
   }
-  maze[y][x].type = EMPTY;
-  if (dis > last_dis){last_dis = dis;
-  last = (Coord) {x,y};}
 
-  Direction possible_dirs[4];
-  u16 possible_dirs_len = 0;
+  Direction dirs[4];
+  u16 dirs_len = 0;
 
   if (SHOW_BUILD) {
-  print_maze();
-  msleep(10);
-}
+    print_maze();
+    msleep(10);
+  }
   
   while (1) {
-    possible_dirs_len = 0;
-    if (y >= 2 && maze[y - 2][x].type == WALL) possible_dirs[possible_dirs_len++] = UP;
-    if (x >= 2 && maze[y][x - 2].type == WALL) possible_dirs[possible_dirs_len++] = LEFT;
-    if (y + 2 < maze_height && maze[y + 2][x].type == WALL) possible_dirs[possible_dirs_len++] = DOWN;
-    if (x + 2 < maze_width  && maze[y][x + 2].type == WALL) possible_dirs[possible_dirs_len++] = RIGHT;
+    dirs_len = 0;
 
-    if (!possible_dirs_len) return (Coord){0,0};
-    Direction chosen = possible_dirs[RAND(0, possible_dirs_len)];
+    if (pos.y >= 2 && maze[pos.y - 2][pos.x].type == WALL) dirs[dirs_len++] = UP;
+    if (pos.x >= 2 && maze[pos.y][pos.x - 2].type == WALL) dirs[dirs_len++] = LEFT;
+    if (pos.y + 2 < maze_height && maze[pos.y + 2][pos.x].type == WALL) dirs[dirs_len++] = DOWN;
+    if (pos.x + 2 < maze_width  && maze[pos.y][pos.x + 2].type == WALL) dirs[dirs_len++] = RIGHT;
 
-    maze[y + (chosen == DOWN ? 1 : chosen == UP ? -1 : 0)][x + (chosen == RIGHT ? 1 : chosen == LEFT ? -1 : 0)].type = EMPTY;
-    maze_generator(x + (chosen == RIGHT ? 2 : chosen == LEFT ? -2 : 0), y + (chosen == DOWN ? 2 : chosen == UP ? -2 : 0), dis + 1, 0);
+    if (!dirs_len) return (Coord) { 0, 0 };
+    Direction chosen = dirs[RAND(0, dirs_len)];
+
+    maze[pos.y + (chosen == DOWN ? 1 : chosen == UP ? -1 : 0)][pos.x + (chosen == RIGHT ? 1 : chosen == LEFT ? -1 : 0)].type = EMPTY;
+    maze_generator((Coord) { pos.x + (chosen == RIGHT ? 2 : chosen == LEFT ? -2 : 0), pos.y + (chosen == DOWN ? 2 : chosen == UP ? -2 : 0) }, distance + 1, 0);
   }
 }
 
@@ -146,17 +149,13 @@ void init_maze() {
   message[0] = 0;
 
   for (u16 i = 0; i < maze_height; i++)
-    for (u16 j = 0; j < maze_width; j++) {
-      maze[i][j].type = WALL;
-      maze[i][j].visited = 0;
-    }
+    for (u16 j = 0; j < maze_width; j++)
+      maze[i][j] = (Cell) { WALL, 0 };
 
   player = (Coord) { RAND(2,  maze_width - 2) / 2 * 2, RAND(1, maze_height - 1) / 2 * 2 };
-  maze_generator(player.x, player.y, 0, 2);
-  maze[player.y][player.x].visited = 1;
+  maze_generator(player, 0, 2);
 
-  Coord finish = maze_generator(0,0, 0, 1);
-
+  Coord finish = maze_generator((Coord) { 0, 0 }, 0, 1);
   maze[finish.y][finish.x].type = FINISH;
 }
 
@@ -171,6 +170,8 @@ CellType player_over() {
 void compute_inputs() {
   Coord tmp = player;
   u16 hit_wall = 0;
+
+  maze[player.y][player.x].visited = 1;
 
   if (c == 'd') player.x++;
   else if (c == 'a') player.x--;
@@ -190,17 +191,15 @@ void compute_inputs() {
     return;
   }
 
-  maze[player.y][player.x].visited = 1;
-
   if (!SKIP_WALK || hit_wall) return;
 
-  u16 possible_dirs_len = 0;
-  if (player.y >= 1 && maze[player.y - 1][player.x].type <= EMPTY) possible_dirs_len++;
-  if (player.x >= 1 && maze[player.y][player.x - 1].type <= EMPTY) possible_dirs_len++;
-  if (player.y + 1 < maze_height && maze[player.y + 1][player.x].type <= EMPTY) possible_dirs_len++;
-  if (player.x + 1 < maze_width  && maze[player.y][player.x + 1].type <= EMPTY) possible_dirs_len++;
+  u16 dirs_len = 0;
+  if (player.y >= 1 && maze[player.y - 1][player.x].type <= EMPTY) dirs_len++;
+  if (player.x >= 1 && maze[player.y][player.x - 1].type <= EMPTY) dirs_len++;
+  if (player.y + 1 < maze_height && maze[player.y + 1][player.x].type <= EMPTY) dirs_len++;
+  if (player.x + 1 < maze_width  && maze[player.y][player.x + 1].type <= EMPTY) dirs_len++;
 
-  if (possible_dirs_len > 2) return;
+  if (dirs_len > 2) return;
 
   print_maze();
   msleep(25);
