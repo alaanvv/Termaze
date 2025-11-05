@@ -12,11 +12,14 @@
 #define MAZE_HEIGHT 30
 
 #define FURTHEST_FINISH 1
-#define SHOW_BUILD 0
+#define SHOW_BUILD 1
 #define TORCH_SIZE 5
-#define DARK_MODE 1
+#define DARK_MODE 0
 #define SKIP_WALK 1
 #define MARK_STEP 1
+
+#define VISITED_MASK 0x0F
+#define BUILD_HEAD_MASK    0xF0
 
 #define MAX(x, y) (x > y ? x : y)
 #define MIN(x, y) (x < y ? x : y)
@@ -55,7 +58,7 @@ c8 ascii[][16] = { "░", "▓", "F" };
 
 typedef struct {
   CellType type;
-  u8 visited;
+  u8 meta;
 } Cell;
 
 typedef struct {
@@ -90,12 +93,14 @@ void print_maze() {
     for (int j = 0; j < maze_width; j++) {
       if (i == maze_height / 2 && j - (maze_width - strlen(message)) / 2 >= 0 && j - (maze_width - strlen(message)) / 2 < strlen(message))
         printf("%c ", message[j - (maze_width - strlen(message)) / 2]);
-      else if ((!maze[i][j].visited || !MARK_STEP) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
+      else if ((!(maze[i][j].meta & VISITED_MASK) || !MARK_STEP) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
         printf("  ");
       else if (is_player_at(j, i))
         printf(MAGENTA "PP" RESET);
-      else if (maze[i][j].visited)
+      else if (maze[i][j].meta & VISITED_MASK)
         printf(MAGENTA "%s%s" RESET, ascii[maze[i][j].type], ascii[maze[i][j].type]);
+      else if (maze[i][j].meta & BUILD_HEAD_MASK)
+        printf(RED "%s%s" RESET, ascii[maze[i][j].type], ascii[maze[i][j].type]);
       else
         printf("%s%s", ascii[maze[i][j].type], ascii[maze[i][j].type]);
     }
@@ -124,12 +129,14 @@ Coord maze_generator(Coord pos, u16 distance, u16 meta_action) {
   Direction dirs[4];
   u16 dirs_len = 0;
 
-  if (SHOW_BUILD) {
-    print_maze();
-    msleep(10);
-  }
-  
   while (1) {
+    maze[pos.y][pos.x].meta |= BUILD_HEAD_MASK;
+
+    if (SHOW_BUILD) {
+      print_maze();
+      msleep(10);
+    }
+
     dirs_len = 0;
 
     if (pos.y >= 2 && maze[pos.y - 2][pos.x].type == WALL) dirs[dirs_len++] = UP;
@@ -137,10 +144,15 @@ Coord maze_generator(Coord pos, u16 distance, u16 meta_action) {
     if (pos.y + 2 < maze_height && maze[pos.y + 2][pos.x].type == WALL) dirs[dirs_len++] = DOWN;
     if (pos.x + 2 < maze_width  && maze[pos.y][pos.x + 2].type == WALL) dirs[dirs_len++] = RIGHT;
 
-    if (!dirs_len) return (Coord) { 0, 0 };
-    Direction chosen = dirs[RAND(0, dirs_len)];
+    if (!dirs_len) {
+      maze[pos.y][pos.x].meta &= ~BUILD_HEAD_MASK;
+      return (Coord) { 0, 0 };
+    }
 
+    Direction chosen = dirs[RAND(0, dirs_len)];
     maze[pos.y + (chosen == DOWN ? 1 : chosen == UP ? -1 : 0)][pos.x + (chosen == RIGHT ? 1 : chosen == LEFT ? -1 : 0)].type = EMPTY;
+
+    maze[pos.y][pos.x].meta &= ~BUILD_HEAD_MASK;
     maze_generator((Coord) { pos.x + (chosen == RIGHT ? 2 : chosen == LEFT ? -2 : 0), pos.y + (chosen == DOWN ? 2 : chosen == UP ? -2 : 0) }, distance + 1, 0);
   }
 }
@@ -171,7 +183,7 @@ void compute_inputs() {
   Coord tmp = player;
   u16 hit_wall = 0;
 
-  maze[player.y][player.x].visited = 1;
+  maze[player.y][player.x].meta |= VISITED_MASK;
 
   if (c == 'd') player.x++;
   else if (c == 'a') player.x--;
