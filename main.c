@@ -12,11 +12,12 @@
 #define MAZE_HEIGHT 30
 
 #define FURTHEST_FINISH 1
-#define SHOW_BUILD 1
+#define SHOW_BUILD 0
 #define TORCH_SIZE 5
-#define DARK_MODE 0
+#define DARK_MODE 1
 #define SKIP_WALK 1
-#define MARK_STEP 1
+#define MARK_STEP 0
+#define MARK_STEP_ON_DARK 0
 
 #define VISITED_MASK 0x0F
 #define BUILD_HEAD_MASK    0xF0
@@ -93,11 +94,11 @@ void print_maze() {
     for (int j = 0; j < maze_width; j++) {
       if (i == maze_height / 2 && j - (maze_width - strlen(message)) / 2 >= 0 && j - (maze_width - strlen(message)) / 2 < strlen(message))
         printf("%c ", message[j - (maze_width - strlen(message)) / 2]);
-      else if ((!(maze[i][j].meta & VISITED_MASK) || !MARK_STEP) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
+      else if ((!(maze[i][j].meta & VISITED_MASK) || !MARK_STEP_ON_DARK) && DARK_MODE && sqrt(pow(j - player.x, 2) + pow(i - player.y, 2)) > TORCH_SIZE)
         printf("  ");
       else if (is_player_at(j, i))
         printf(MAGENTA "PP" RESET);
-      else if (maze[i][j].meta & VISITED_MASK)
+      else if (maze[i][j].meta & VISITED_MASK && MARK_STEP)
         printf(MAGENTA "%s%s" RESET, ascii[maze[i][j].type], ascii[maze[i][j].type]);
       else if (maze[i][j].meta & BUILD_HEAD_MASK)
         printf(RED "%s%s" RESET, ascii[maze[i][j].type], ascii[maze[i][j].type]);
