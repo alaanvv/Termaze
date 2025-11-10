@@ -2,7 +2,7 @@
 
 # Termaze
 
-<img width="80%" src="https://github.com/alaanvv/Image-Database/blob/main/Misc/termaze.png?raw=true">]
+<img width="80%" src="https://github.com/alaanvv/Image-Database/blob/main/Misc/termaze.png?raw=true">
 
 Maze game made on C using POSIX features and ASCII arts
 
